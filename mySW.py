@@ -5,27 +5,25 @@ import logging
 logger = logging.getLogger(__name__)
 import xarray as xr
 
+# Parameters
+Nphi = 128
+Ntheta = 64
+dealias = (3/2, 3/2)
+dtype = np.float64
+
 # Simulation units
 meter = 1 / 6.37122e6
 hour = 1
 second = hour / 3600
 day = hour*24
 
-# Parameters
-Nphi = 128
-Ntheta = 64
-dealias = (3/2, 3/2)
-R = 8.2e7 * meter
-Omega = 3.2e-5 / second
-g = 20 * meter / second**2
-H0 = 4e6 * meter**2/second**2/g
-DeltaHeq = 0.01*H0
-
+taurad = 0.1*day
 taudrag = 10 * day
-taurad = taudrag
+Omega = 3.2e-5 / second
+R = 8.2e7 * meter
+gH0 = 4e6 * meter**2/second**2
+gDeltaHeq = 0.01*gH0
 
-
-dtype = np.float64
 nu = 1e5 * meter**2 / second / 32**2 # hyperdiffusion constant
 
 
@@ -36,36 +34,40 @@ dist = d3.Distributor(coords, dtype=dtype)
 full_basis = d3.SphereBasis(coords, (Nphi, Ntheta), radius=R, dealias=dealias, dtype=dtype)
 #zonal_basis = d3.SphereBasis(coords, (1, Ntheta), radius=R, dealias=dealias, dtype=dtype)
 
+# Nonlinearity
+eps = 1.e-4
+def step(A): 
+    return 1./2. * (1. + np.tanh(A/eps))
+# cross product by zhat
+zcross = lambda A: d3.MulCosine(d3.skew(A))
 
 # Fields
 u = dist.VectorField(coords, name='u', bases=full_basis)
-h = dist.Field(name='h', bases=full_basis)
-heq = dist.Field(name='heq', bases=full_basis)
-
+gh = dist.Field(name='gh', bases=full_basis)
+gheq = dist.Field(name='gheq', bases=full_basis)
 
 ephi = dist.VectorField(coords, bases=full_basis)
 ephi['g'][0] = 1
 etheta = dist.VectorField(coords, bases=full_basis)
 etheta['g'][1] = 1
 
-#lat0 = 0.
-#Deltalat=20.*np.pi/180.
 phi, theta = dist.local_grids(full_basis)
 lat = np.pi/2-theta
-heq['g'] = H0 + DeltaHeq*np.cos(phi)*np.cos(lat)#np.exp(-((lat-lat0)/Deltalat)**2)
-h['g'] = heq['g']
+lon = phi-np.pi
+gheq['g'] = gH0 + gDeltaHeq*np.cos(lon)*np.cos(lat)#np.exp(-((lat-lat0)/Deltalat)**2)
+gh.fill_random('g', seed=42, distribution='normal', scale=gDeltaHeq*1e-3)
+gh['g'] += gH0
 
-# cross product by zhat
-zcross = lambda A: d3.MulCosine(d3.skew(A))
+
 
 # Timestepping parameters
-timestep = 0.1*hour
-stop_sim_time = 8*day
+timestep = 0.05*hour
+stop_sim_time = 100*hour
 
 # Problem
-problem = d3.IVP([u, h], namespace=locals())
-problem.add_equation("dt(u) + nu*lap(lap(u)) + g*grad(h) + 2*Omega*zcross(u) + u/taudrag = - u@grad(u)")
-problem.add_equation("dt(h) + nu*lap(lap(h)) + h/taurad = - div(u*h) + heq/taurad")
+problem = d3.IVP([u, gh], namespace=locals())
+problem.add_equation("dt(u) + nu*lap(lap(u)) + grad(gh) + 2*Omega*zcross(u) + u/taudrag = - u@grad(u)")#- step(gheq-gh)*(gheq-gh)/taurad*u/gh
+problem.add_equation("dt(gh) + nu*lap(lap(gh)) = - div(u*gh) + (gheq-gh)/taurad")
 
 # Solver
 solver = problem.build_solver(d3.RK222)
@@ -76,8 +78,8 @@ solver.stop_sim_time = stop_sim_time
 #CFL.add_velocity(u)
 
 # Analysis
-snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.1*hour)
-snapshots.add_task(h, name='height')
+snapshots = solver.evaluator.add_file_handler('snapshots_novmt', sim_dt=0.1*hour)
+snapshots.add_task(gh, name='height')
 #snapshots.add_task(-d3.div(d3.skew(u)), name='vorticity')
 snapshots.add_task(u@ephi, name='u')
 snapshots.add_task(-u@etheta, name='v')

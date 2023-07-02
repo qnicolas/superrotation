@@ -80,12 +80,16 @@ problem2 = d3.IVP([u,h], namespace=locals())
 problem2.add_equation("dt(u) + nu*lap(lap(u)) + alpha_fric*u + Ld4 * grad(h) + zcross(u) = -u@grad(u) - alpha_damp*step(heq-h)*(heq-h)*u/h")
 problem2.add_equation("dt(h) + nu*lap(lap(h)) = alpha_damp*(heq-h) - div(h*u)")
 
-
-
-
-# Solve
+# Solver
 solver2 = problem2.build_solver(d3.RK222) 
 solver2.stop_sim_time = stop_sim_time
+
+# Snapshots
+snapshots = solver2.evaluator.add_file_handler('snapshots', sim_dt=0.1*hour)
+snapshots.add_task(h, name='height')
+snapshots.add_task(-d3.div(d3.skew(u)), name='vorticity')
+#snapshots.add_task(u@ephi, name='u')
+#snapshots.add_task(-u@etheta, name='v')
 
 flow = d3.GlobalFlowProperty(solver2, cadence=10)
 flow.add_property(np.sqrt(u@u), name='rtu2')
@@ -118,12 +122,12 @@ h = h.allgather_data('g')
 
 
 
-if dist.comm.rank == 0:
-    cmap = plt.cm.inferno
-    plt.figure(figsize=(8,5))
-    pt=plt.contourf(lon, lat, (h).T, levels=18, cmap=cmap)
-    plt.contour(lon, lat, (h).T, levels=18, colors='k', linewidths=1.5)
-    plt.quiver(lon[::12], lat[::6], (u1).T[::6,::12], u2.T[::6,::12])
-    plt.title('Nonlinear simulation')
-    plt.savefig('nonlinear_sphere.png', dpi=200)
+#if dist.comm.rank == 0:
+#    cmap = plt.cm.inferno
+#    plt.figure(figsize=(8,5))
+#    pt=plt.contourf(lon, lat, (h).T, levels=18, cmap=cmap)
+#    plt.contour(lon, lat, (h).T, levels=18, colors='k', linewidths=1.5)
+#    plt.quiver(lon[::12], lat[::6], (u1).T[::6,::12], u2.T[::6,::12])
+#    plt.title('Nonlinear simulation')
+#    plt.savefig('nonlinear_sphere.png', dpi=200)
 
