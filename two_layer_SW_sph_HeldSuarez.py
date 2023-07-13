@@ -22,11 +22,11 @@ day = hour*24
 #########################################
 #########################################
 ###############  SET    #################
-snapshot_id = 'snapshots_2l_HeldSuarez_10days_test'
+snapshot_id = 'snapshots_2l_cos4_10days'
 vmt=False
-restart=False#; restart_id='s1'
+restart=True; restart_id='s1'
 timestep = 200*second
-stop_sim_time = 100*hour
+stop_sim_time = 1000*hour
 #########################################
 #########################################
 
@@ -84,6 +84,11 @@ if dist.comm.rank == 0:
 ###############################
 ###### INITIALIZE FIELDS ######
 ###############################
+u1_init = dist.VectorField(coords, name='u1_init', bases=full_basis)
+h1_init = dist.Field(name='h1_init', bases=full_basis)
+u2_init = dist.VectorField(coords, name='u2_init', bases=full_basis)
+h2_init = dist.Field(name='h2_init', bases=full_basis)
+
 u10 = dist.VectorField(coords, name='u10', bases=zonal_basis)
 h10 = dist.Field(name='h10', bases=zonal_basis)
 u20 = dist.VectorField(coords, name='u20', bases=zonal_basis)
@@ -93,96 +98,92 @@ h2ref0 = dist.Field(name='h2ref', bases=zonal_basis)
 
 phi, theta = dist.local_grids(zonal_basis)
 lat = np.pi / 2 - theta + 0*phi
-hvar = 1.4*H0*0.25*(1-3*np.sin(lat)**2)
+hvar = hvar = -1.5*H0*(8/15-np.cos(lat)**4)#1.4*H0*0.25*(1-3*np.sin(lat)**2)
+fact_nu=10. # Hyperdiffusion enhancement
 h1ref0['g'] =  hvar+H0
 h2ref0['g'] = -hvar+H0
 
-h10['g'] = h1ref0['g']
-h20['g'] = h2ref0['g']
-
-phi, theta = dist.local_grids(zonal_basis)
-lat = np.pi / 2 - theta
-u10 = d3.skew(g*d3.grad(h10+h20)).evaluate()
-u10.change_scales(1)
-u10['g']/=(2*Omega*np.sin(lat))
-u20 = d3.skew(g*d3.grad(h10+h20)+gprime*d3.grad(h20)).evaluate()
-u20.change_scales(1)
-u20['g']/=(2*Omega*np.sin(lat))
-
-# Find balanced height field
-problem = d3.NLBVP([h10,h20,u10,u20], namespace=locals())
-problem.add_equation("nu*lap(lap(u10)) + 2*Omega*zcross(u10) + u10/taudrag = -g*grad(h10+h20)")
-problem.add_equation("nu*lap(lap(u20)) + 2*Omega*zcross(u20) + u20/taudrag = -g*grad(h10+h20) - gprime*grad(h20)")
-problem.add_equation("nu*lap(lap(h10)) + div(u10*h10) = (h1ref0-h10)/taurad")
-problem.add_equation("nu*lap(lap(h20)) + div(u20*h20) = (h2ref0-h20)/taurad")
-
-ncc_cutoff = 1e-7
-tolerance = 1e-5
-u10.change_scales(dealias)
-h10.change_scales(dealias)
-u20.change_scales(dealias)
-h20.change_scales(dealias)
-h1ref0.change_scales(dealias)
-h2ref0.change_scales(dealias)
-solver = problem.build_solver(ncc_cutoff=ncc_cutoff),
-pert_norm = np.inf
-
-while pert_norm > tolerance:
-    print(len(solver))
-    solver[0].newton_iteration(damping=1)
-    pert_norm = sum(pert.allreduce_data_norm('c', 2) for pert in solver[0].perturbations)
-    logger.info(f'Perturbation norm: {pert_norm:.3e}')
-
-u10.change_scales(1)
-h10.change_scales(1)
-u20.change_scales(1)
-h20.change_scales(1)
-h1ref0.change_scales(1)
-h2ref0.change_scales(1)
-
-u1_init = dist.VectorField(coords, name='u1_init', bases=full_basis)
-h1_init = dist.Field(name='h1_init', bases=full_basis)
-u2_init = dist.VectorField(coords, name='u2_init', bases=full_basis)
-h2_init = dist.Field(name='h2_init', bases=full_basis)
-#phi, theta = dist.local_grids(full_basis)
-#lat = np.pi/2-theta
-#lon = phi-np.pi
-
-u1_init['g'] = u10['g']
-h1_init['g'] = h10['g']
-u2_init['g'] = u20['g']
-h2_init['g'] = h20['g']
+if not restart:
+    h10['g'] = h1ref0['g']
+    h20['g'] = h2ref0['g']
+    
+    phi, theta = dist.local_grids(zonal_basis)
+    lat = np.pi / 2 - theta
+    u10 = d3.skew(g*d3.grad(h10+h20)).evaluate()
+    u10.change_scales(1)
+    u10['g']/=(2*Omega*np.sin(lat))
+    u20 = d3.skew(g*d3.grad(h10+h20)+gprime*d3.grad(h20)).evaluate()
+    u20.change_scales(1)
+    u20['g']/=(2*Omega*np.sin(lat))
+    
+    # Find balanced height field
+    problem = d3.NLBVP([h10,h20,u10,u20], namespace=locals())
+    problem.add_equation("fact_nu*nu*lap(lap(u10)) + 2*Omega*zcross(u10) + u10/taudrag = -g*grad(h10+h20)")
+    problem.add_equation("fact_nu*nu*lap(lap(u20)) + 2*Omega*zcross(u20) + u20/taudrag = -g*grad(h10+h20) - gprime*grad(h20)")
+    problem.add_equation("fact_nu*nu*lap(lap(h10)) + div(u10*h10) = (h1ref0-h10)/taurad")
+    problem.add_equation("fact_nu*nu*lap(lap(h20)) + div(u20*h20) = (h2ref0-h20)/taurad")
+    
+    ncc_cutoff = 1e-7
+    tolerance = 1e-5
+    u10.change_scales(dealias)
+    h10.change_scales(dealias)
+    u20.change_scales(dealias)
+    h20.change_scales(dealias)
+    h1ref0.change_scales(dealias)
+    h2ref0.change_scales(dealias)
+    solver = problem.build_solver(ncc_cutoff=ncc_cutoff),
+    pert_norm = np.inf
+    
+    while pert_norm > tolerance:
+        print(len(solver))
+        solver[0].newton_iteration(damping=1)
+        pert_norm = sum(pert.allreduce_data_norm('c', 2) for pert in solver[0].perturbations)
+        logger.info(f'Perturbation norm: {pert_norm:.3e}')
+    
+    u10.change_scales(1)
+    h10.change_scales(1)
+    u20.change_scales(1)
+    h20.change_scales(1)
+    h1ref0.change_scales(1)
+    h2ref0.change_scales(1)
+    
+    #phi, theta = dist.local_grids(full_basis)
+    #lat = np.pi/2-theta
+    #lon = phi-np.pi
+    
+    u1_init['g'] = u10['g']
+    h1_init['g'] = h10['g']
+    u2_init['g'] = u20['g']
+    h2_init['g'] = h20['g']
 
 if vmt and not restart:
-    raise ValueError('Not implemented')
-#    Q = dist.Field(name='Q', bases=zonal_basis)
-#    h20.change_scales(1)
-#    Q['g'] = -(h20['g']-H0)/taurad
-#    
-#    # Find balanced velocity field
-#    problem_HS = d3.NLBVP([u10,u20], namespace=locals())
-#    problem_HS.add_equation("nu*lap(lap(u10)) + 2*Omega*zcross(u10) + u10/taudrag = -g*grad(h10+h20) + (u20-u10)/h10*Q*step(Q)")
-#    problem_HS.add_equation("nu*lap(lap(u20)) + 2*Omega*zcross(u20) + u20/taudrag = -g*grad(h10+h20) - gprime*grad(h20) - (u10-u20)/h20*Q*step(-Q)")
-#    
-#    ncc_cutoff = 1e-4
-#    tolerance = 1e-5
-#    u10.change_scales(dealias)
-#    h10.change_scales(dealias)
-#    u20.change_scales(dealias)
-#    h20.change_scales(dealias)
-#    Q.change_scales(dealias)
-#    solver_HS = problem_HS.build_solver(ncc_cutoff=ncc_cutoff),
-#    pert_norm = np.inf
-#    
-#    while pert_norm > tolerance:
-#        print(len(solver_HS))
-#        solver_HS[0].newton_iteration(damping=1)
-#        pert_norm = sum(pert.allreduce_data_norm('c', 2) for pert in solver_HS[0].perturbations)
-#        logger.info(f'Perturbation norm: {pert_norm:.3e}')
-#    u10.change_scales(1)
-#    u20.change_scales(1)
-#    u1_init['g'] = u10['g']
-#    u2_init['g'] = u20['g']
+    Q = dist.Field(name='Q', bases=zonal_basis)
+    Q['g'] = hvar/taurad
+    
+    # Find balanced velocity field
+    problem_HS = d3.NLBVP([u10,u20], namespace=locals())
+    problem_HS.add_equation("nu*lap(lap(u10)) + 2*Omega*zcross(u10) + u10/taudrag = -g*grad(h10+h20) + (u20-u10)/h10*Q*step(Q)")
+    problem_HS.add_equation("nu*lap(lap(u20)) + 2*Omega*zcross(u20) + u20/taudrag = -g*grad(h10+h20) - gprime*grad(h20) - (u10-u20)/h20*Q*step(-Q)")
+    
+    ncc_cutoff = 1e-4
+    tolerance = 1e-5
+    u10.change_scales(dealias)
+    h10.change_scales(dealias)
+    u20.change_scales(dealias)
+    h20.change_scales(dealias)
+    Q.change_scales(dealias)
+    solver_HS = problem_HS.build_solver(ncc_cutoff=ncc_cutoff),
+    pert_norm = np.inf
+    
+    while pert_norm > tolerance:
+        print(len(solver_HS))
+        solver_HS[0].newton_iteration(damping=1)
+        pert_norm = sum(pert.allreduce_data_norm('c', 2) for pert in solver_HS[0].perturbations)
+        logger.info(f'Perturbation norm: {pert_norm:.3e}')
+    u10.change_scales(1)
+    u20.change_scales(1)
+    u1_init['g'] = u10['g']
+    u2_init['g'] = u20['g']
 
         
 u1_init.change_scales(1)
@@ -221,7 +222,7 @@ solver = problem.build_solver(d3.RK222)
 solver.stop_sim_time = stop_sim_time
 
 ## CFL
-CFL = d3.CFL(solver, initial_dt=timestep, cadence=10, safety=0.1, threshold=0.1)
+CFL = d3.CFL(solver, initial_dt=timestep, cadence=10, safety=0.05, threshold=0.1)
 CFL.add_velocity(u1)
 
 ###################################################
@@ -229,8 +230,8 @@ CFL.add_velocity(u1)
 ###################################################
 
 if not restart:
-    h1.fill_random('g', seed=1, distribution='normal', scale=DeltaHeq*1e-3)
-    h2.fill_random('g', seed=2, distribution='normal', scale=DeltaHeq*1e-3)
+    h1.fill_random('g', seed=1, distribution='normal', scale=DeltaHeq*1e-2)
+    h2.fill_random('g', seed=2, distribution='normal', scale=DeltaHeq*1e-2)
     h1['g'] += h1_init['g'] 
     h2['g'] += h2_init['g']
     u1['g'] = u1_init['g'] 
@@ -264,24 +265,30 @@ snapshots.add_task(-d3.div(d3.skew(u2)), name='vorticity_2')
 #snapshots.add_task(2*Omega*zcross(u1)@ephi,name = "cor_u1")
 #snapshots.add_task(-u1@ephi/taudrag,name = "drag_u1")
 #
-#snapshots.add_task((u1@d3.grad(u1))@(-etheta),name = "u1gradv1")
-#snapshots.add_task(-nu*d3.lap(d3.lap(u1@(-etheta))),name = "hyperdiff_v1")
-#snapshots.add_task(-g*d3.grad(h1+h2)@(-etheta),name = "pgy_1")
-#snapshots.add_task(2*Omega*zcross(u1)@(-etheta),name = "cor_v1")
-#snapshots.add_task(-u1@(-etheta)/taudrag,name = "drag_v1")
-#
-#snapshots.add_task((u2@d3.grad(u2))@(-etheta),name = "u2gradv2")
-#snapshots.add_task(-nu*d3.lap(d3.lap(u2@(-etheta))),name = "hyperdiff_v2")
-#snapshots.add_task(-g*rho1_ov_rho2*d3.grad(h1+h2)@(-etheta),name = "pgy_2_1")
-#snapshots.add_task(-gprime*rho1_ov_rho2*d3.grad(h2)@(-etheta),name = "pgy_2_2")
-#snapshots.add_task(2*Omega*zcross(u2)@(-etheta),name = "cor_v2")
-#snapshots.add_task(-u2@(-etheta)/taudrag,name = "drag_v2")
+snapshots.add_task((u1@d3.grad(u1))@(-etheta),name = "u1gradv1")
+snapshots.add_task(-nu*d3.lap(d3.lap(u1@(-etheta))),name = "hyperdiff_v1")
+snapshots.add_task(-g*d3.grad(h1+h2)@(-etheta),name = "pgy_1")
+snapshots.add_task(2*Omega*zcross(u1)@(-etheta),name = "cor_v1")
+snapshots.add_task(-u1@(-etheta)/taudrag,name = "drag_v1")
+
+snapshots.add_task((u2@d3.grad(u2))@(-etheta),name = "u2gradv2")
+snapshots.add_task(-nu*d3.lap(d3.lap(u2@(-etheta))),name = "hyperdiff_v2")
+snapshots.add_task(-g*rho1_ov_rho2*d3.grad(h1+h2)@(-etheta),name = "pgy_2_1")
+snapshots.add_task(-gprime*rho1_ov_rho2*d3.grad(h2)@(-etheta),name = "pgy_2_2")
+snapshots.add_task(2*Omega*zcross(u2)@(-etheta),name = "cor_v2")
+snapshots.add_task(-u2@(-etheta)/taudrag,name = "drag_v2")
+
+snapshots.add_task((h1ref-h1)/taurad,name = "Q1")
+snapshots.add_task(d3.div(u1*h1),name = "divu1h1")
+snapshots.add_task(h1ref,name = "h1ref")
+
 
 # Main loop
 try:
     logger.info('Starting main loop')
     while solver.proceed:
-        #timestep = CFL.compute_timestep()
+        #if restart:  # Somehow using CFL on an initial run tends to end up with crashes
+        #    timestep = CFL.compute_timestep()
         solver.step(timestep)
         if (solver.iteration-1) % 20 == 0:
             logger.info('Iteration=%i, Time=%e, dt=%e' %(solver.iteration, solver.sim_time, timestep))
