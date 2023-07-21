@@ -1,5 +1,6 @@
 .DS_Store
 .ipynb_checkpoints/
-snapshots*
 __pycache__/
 old/
+job*
+R-*

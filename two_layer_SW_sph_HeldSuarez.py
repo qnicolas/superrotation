@@ -98,7 +98,7 @@ h2ref0 = dist.Field(name='h2ref', bases=zonal_basis)
 
 phi, theta = dist.local_grids(zonal_basis)
 lat = np.pi / 2 - theta + 0*phi
-hvar = hvar = -1.5*H0*(8/15-np.cos(lat)**4)#1.4*H0*0.25*(1-3*np.sin(lat)**2)
+hvar = -1.5*H0*(8/15-np.cos(lat)**4)#1.4*H0*0.25*(1-3*np.sin(lat)**2)
 fact_nu=10. # Hyperdiffusion enhancement
 h1ref0['g'] =  hvar+H0
 h2ref0['g'] = -hvar+H0
