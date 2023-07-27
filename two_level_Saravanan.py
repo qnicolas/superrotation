@@ -30,19 +30,19 @@ R = R_E
 # Set Parameters
 Ro_T = 3.
 E = 0.02
-tau_rad_nondim = 400
+tau_rad_nondim = 50
 mu = 0.05
 
 #########################################
 #########################################
 ###############  SET    #################
 snapshot_id = 'snapshots_2level_T21_locked_%i_p02_%i_p05'%(Ro_T,tau_rad_nondim)
-restart=True; restart_id='s1'
-use_CFL=True; safety_CFL = 0.8
+restart=False; restart_id='s1'
+use_CFL=False; safety_CFL = 0.8
 tidally_locked = True
 use_heating = False; heating_magnitude=5*Kelvin/(day); heating_waveno=1; heating_shape='cos'
-timestep = 2e2*second / (Omega/Omega_E)
-stop_sim_time = 200*day / (Omega/Omega_E)
+timestep = 4e2*second / (Omega/Omega_E)
+stop_sim_time = 10*day / (Omega/Omega_E)
 #########################################
 #########################################
 
@@ -134,7 +134,6 @@ phi, theta = dist.local_grids(full_basis)
 lat = np.pi / 2 - theta + 0*phi
 lon = phi-np.pi
 if tidally_locked:
-
     theta1E['g'] = DeltaThetaVertical+DeltaTheta*np.cos(lat)*np.cos(lon)*(np.cos(lon)>=0) #np.exp(-(lat/(55*np.pi/180))**2)
     theta2E['g'] = DeltaTheta*np.cos(lat)*np.cos(lon)*(np.cos(lon)>=0) #np.exp(-(lat/(55*np.pi/180))**2)
 else:
@@ -150,11 +149,11 @@ if use_heating:
 if not restart:
     theta1.fill_random('g', seed=1, distribution='normal', scale=40*1e-4*Kelvin)
     theta2.fill_random('g', seed=2, distribution='normal', scale=40*1e-4*Kelvin)
-    theta1['g'] += 1.1*DeltaTheta/4
+    theta1['g'] += DeltaThetaVertical + DeltaTheta/4
     theta2['g'] += DeltaTheta/4
     #theta1['g'] += theta1E['g']
     #theta2['g'] += theta2E['g']
-    Phi2['g'] = - (P2-P1) * cp * (theta1['g']+theta2['g'])/2
+    #Phi2['g'] = - (P2-P1) * cp * (theta1['g']+theta2['g'])/2
     ###u2 = d3.skew(d3.grad(Phi2)).evaluate()
     ###u2.change_scales(1)
     ###u2['g']/=(2*Omega*np.sin(lat))
@@ -180,7 +179,7 @@ snapshots.add_task(-d3.div(d3.skew(u1)), name='vorticity_1')
 snapshots.add_task(-d3.div(d3.skew(u2)), name='vorticity_2')
 snapshots.add_task(theta1E, name='theta1E')
 snapshots.add_task(theta2E, name='theta2E')
-snapshots.add_task(Qtropics, name='Qtropics')
+#snapshots.add_task(Qtropics, name='Qtropics')
 
 
 #nu_ = dist.Field(name='nu_')

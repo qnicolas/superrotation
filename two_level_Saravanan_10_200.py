@@ -36,13 +36,13 @@ mu = 0.05
 #########################################
 #########################################
 ###############  SET    #################
-snapshot_id = 'snapshots_2level_T42_locked_%i_p02_%i_p05'%(Ro_T,tau_rad_nondim)
-restart=True; restart_id='s2'
-use_CFL=True; safety_CFL = 0.8
+snapshot_id = 'snapshots_2level_T42_locked_%i_p02_%i_p05_8damp'%(Ro_T,tau_rad_nondim)
+restart=False; restart_id='s1'
+use_CFL=False; safety_CFL = 0.8
 tidally_locked = True
 use_heating = False; heating_magnitude=5*Kelvin/(day); heating_waveno=1; heating_shape='cos'
-timestep = 2e2*second / (Omega/Omega_E)
-stop_sim_time = 201*day / (Omega/Omega_E)
+timestep = 1.5e2*second / (Omega/Omega_E)
+stop_sim_time = 10*day / (Omega/Omega_E)
 #########################################
 #########################################
 
@@ -56,8 +56,8 @@ DeltaThetaVertical = mu*DeltaTheta
 Theta0 = 4*DeltaTheta #For non-tidally locked cases
 taurad = tau_rad_nondim/(2*Omega)
 taudrag = 1/(2*Omega*E)
-hyperdiff_degree = 4; nu = 40e15*meter**4/second * (R/R_E)**4 * (Omega/Omega_E)
-#hyperdiff_degree = 8; nu = 1e8*3e37*meter**8/second 
+#hyperdiff_degree = 4; nu = 40e15*meter**4/second * (R/R_E)**4 * (Omega/Omega_E)
+hyperdiff_degree = 8; nu = 3e37*meter**8/second 
 
 # Bases
 coords = d3.S2Coordinates('phi', 'theta')
@@ -179,10 +179,15 @@ snapshots.add_task(Phi1- (P2-P1)*cp*(theta1+theta2)/2, name='Phi2')
 snapshots.add_task(d3.div(u2), name='omega')
 snapshots.add_task(-d3.div(d3.skew(u1)), name='vorticity_1')
 snapshots.add_task(-d3.div(d3.skew(u2)), name='vorticity_2')
-snapshots.add_task(theta1E, name='theta1E')
-snapshots.add_task(theta2E, name='theta2E')
-snapshots.add_task(Qtropics, name='Qtropics')
-
+#snapshots.add_task(theta1E, name='theta1E')
+#snapshots.add_task(theta2E, name='theta2E')
+#snapshots.add_task(Qtropics, name='Qtropics')
+if hyperdiff_degree == 4:
+    snapshots.add_task(nu*d3.lap(d3.lap(u1))@ephi, name='hyperdiff_u1')
+    snapshots.add_task(nu*d3.lap(d3.lap(u2))@ephi, name='hyperdiff_u2')
+elif hyperdiff_degree == 8:
+    snapshots.add_task(nu*d3.lap(d3.lap(d3.lap(d3.lap(u1))))@ephi, name='hyperdiff_u1')
+    snapshots.add_task(nu*d3.lap(d3.lap(d3.lap(d3.lap(u2))))@ephi, name='hyperdiff_u2')
 
 coslat = dist.Field(name='coslat' , bases=full_basis)
 sinlat = dist.Field(name='sinlat' , bases=full_basis)
@@ -194,18 +199,16 @@ sinlat['g'] = np.cos(theta)
 u1x = u1@ephi
 u2x = u2@ephi
 u1y = u1@(-etheta)
-u1x_zonalmean = d3.Average(u1x,'phi')
-#u2x_zonalmean = d3.Average(u2x,'phi')
-#u1y_zonalmean = d3.Average(u1y,'phi')
+u2y = u1@(-etheta)
 zeta1 = -d3.div(d3.skew(u1))
-#zeta1_zonalmean = d3.Average(zeta1,'phi')
+zeta2 = -d3.div(d3.skew(u1))
 
 dy_uv       = d3.div(u1*u1)@(ephi)
 fzetav      = (2*Omega*sinlat + zeta1) * u1y
 omegaubar   = d3.div(u2) * (u1x + u2x) / 2
 omegauhat   = d3.div(u2) * (u1x - u2x) / 2
 
-dy_uv_b     = d3.div(d3.Average(u1,'phi')*d3.Average(u1,'phi'))
+dy_uv_b     = d3.div(d3.Average(u1,'phi')*d3.Average(u1,'phi'))@(ephi)
 fzetav_b    = (2*Omega*d3.Average(sinlat,'phi') + d3.Average(zeta1,'phi')) * d3.Average(u1y,'phi')
 omegaubar_b = d3.Average(d3.div(u2),'phi') * d3.Average(u1x + u2x,'phi') / 2
 omegauhat_b = d3.Average(d3.div(u2),'phi') * d3.Average(u1x - u2x,'phi') / 2
@@ -221,7 +224,28 @@ snapshots.add_task(omegaubar_b, name='omegaubar_b')
 snapshots.add_task(omegauhat_b, name='omegauhat_b')
 
 snapshots.add_task(u1, layout=dist.layouts[1], name='u1_mixed')
+snapshots.add_task(u2, layout=dist.layouts[1], name='u2_mixed')
+snapshots.add_task(d3.div(u2), layout=dist.layouts[1], name='omega_mixed')
+snapshots.add_task(-d3.div(d3.skew(u1)), layout=dist.layouts[1], name='zeta1_mixed')
+snapshots.add_task(-d3.div(d3.skew(u2)), layout=dist.layouts[1], name='zeta2_mixed')
 
+################################################
+dy_uv_2     = d3.div(u2*u2)@(ephi)
+fzetav_2    = (2*Omega*sinlat + zeta2) * u2y
+
+dy_uv_b_2   = d3.div(d3.Average(u2,'phi')*d3.Average(u2,'phi'))
+fzetav_b_2  = (2*Omega*d3.Average(sinlat,'phi') + d3.Average(zeta2,'phi')) * d3.Average(u2y,'phi')
+
+snapshots.add_task(dy_uv_2  , name='dy_uv_2')
+snapshots.add_task(fzetav_2 , name='fzetav_2')
+
+snapshots.add_task(dy_uv_b_2  , name='dy_uv_b_2')
+snapshots.add_task(fzetav_b_2 , name='fzetav_b_2')
+
+
+
+snapshots.add_task(u1, layout='c', name='u1_c')
+snapshots.add_task(u2, layout='c', name='u2_c')
 
 # Main loop
 with warnings.catch_warnings():
