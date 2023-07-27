@@ -42,7 +42,7 @@ use_CFL=False; safety_CFL = 0.8
 tidally_locked = True
 use_heating = False; heating_magnitude=5*Kelvin/(day); heating_waveno=1; heating_shape='cos'
 timestep = 4e2*second / (Omega/Omega_E)
-stop_sim_time = 10*day / (Omega/Omega_E)
+stop_sim_time = 2*day / (Omega/Omega_E)
 #########################################
 #########################################
 
@@ -147,8 +147,8 @@ if use_heating:
         Qtropics['g'] = heating_magnitude * (1+np.cos(2*lat))/2 * np.sin(heating_waveno*phi)
 
 if not restart:
-    theta1.fill_random('g', seed=1, distribution='normal', scale=40*1e-4*Kelvin)
-    theta2.fill_random('g', seed=2, distribution='normal', scale=40*1e-4*Kelvin)
+    theta1.fill_random('g', seed=1, distribution='normal', scale=DeltaTheta*1e-4)
+    theta2.fill_random('g', seed=2, distribution='normal', scale=DeltaTheta*1e-4)
     theta1['g'] += DeltaThetaVertical + DeltaTheta/4
     theta2['g'] += DeltaTheta/4
     #theta1['g'] += theta1E['g']
