@@ -9,18 +9,20 @@ import sys
 import xarray as xr
 
 # Split communicator
-Nproc_per_run = 2
-world_rank = MPI.COMM_WORLD.Get_rank()
-world_size = MPI.COMM_WORLD.Get_size()
-if world_size%Nproc_per_run !=0:
-    raise ValueError('The number of processes must be a multiple of Nproc_per_run !')
-color = world_rank//Nproc_per_run
-key = world_rank
-newcomm = MPI.COMM_WORLD.Split(color, key)
+# Nproc_per_run = 2
+# world_rank = MPI.COMM_WORLD.Get_rank()
+# world_size = MPI.COMM_WORLD.Get_size()
+# if world_size%Nproc_per_run !=0:
+#     raise ValueError('The number of processes must be a multiple of Nproc_per_run !')
+# color = world_rank//Nproc_per_run
+# key = world_rank
+# newcomm = MPI.COMM_WORLD.Split(color, key)
 
-Ro_T = 1.
-tau_rad_nondim = [5,20,100,500][color]
-E = 1/tau_rad_nondim
+#Ro_T = 1.
+#tau_rad_nondim = [5,20,100,500][color]
+#E = 1/tau_rad_nondim
+
+newcomm = MPI.COMM_WORLD; Nproc_per_run = MPI.COMM_WORLD.Get_size()
 
 # Parameters
 Nphi = 128; Ntheta = 64; resolution='T42'
@@ -42,9 +44,9 @@ Omega = Omega_E/3  # Omega_E
 R     = 80e6*meter # R_E
 
 # Set Parameters
-#Ro_T = 1.
-#E = 0.02/100
-#tau_rad_nondim = 30
+Ro_T = 5.
+E = 0.1
+tau_rad_nondim = 10
 mu = 0.05
 
 #########################################
@@ -110,7 +112,7 @@ gh1   = dist.Field(name='gh1', bases=full_basis)
 gh1E  = dist.Field(name='gh1E', bases=full_basis)
 
 Rgas = 3000 * meter**2 / second**2 / Kelvin
-gH = Rgas*DeltaThetaVertical
+gH = Rgas*DeltaTheta
 
 phi, theta = dist.local_grids(full_basis)
 lat = np.pi / 2 - theta + 0*phi
