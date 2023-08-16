@@ -6,11 +6,11 @@ logger = logging.getLogger(__name__)
 from mpi4py import MPI
 import os;import shutil;from pathlib import Path
 SNAPSHOTS_DIR = "/pscratch/sd/q/qnicolas/dedalus_snapshots/"
-import warnings
+import warnings; import sys
 
 # Parameters
-#Nphi = 128; Ntheta = 64
-Nphi = 64; Ntheta = 32
+Nphi = 128; Ntheta = 64; resolution='T42'
+#Nphi = 64; Ntheta = 32; resolution='T21'
 dealias = (3/2, 3/2)
 dtype = np.float64
 
@@ -24,25 +24,56 @@ Kelvin = 1
 # Earth parameters
 R_E = 6.4e6*meter
 Omega_E = 2*np.pi/86400 / second
-Omega = Omega_E
-R = R_E
+Omega = Omega_E/3  # Omega_E
+R     = 80e6*meter # R_E
 
 # Set Parameters
-Ro_T = 3.
+#Ro_T = 1.
 E = 0.02
-tau_rad_nondim = 50
+#tau_rad_nondim = 30
 mu = 0.05
+
+Ro_T = float(sys.argv[2])
+tau_rad_nondim = int(sys.argv[3])
+
+print(Ro_T,tau_rad_nondim)
 
 #########################################
 #########################################
 ###############  SET    #################
-snapshot_id = 'snapshots_2level_T21_locked_%i_p02_%i_p05'%(Ro_T,tau_rad_nondim)
 restart=False; restart_id='s1'
 use_CFL=False; safety_CFL = 0.8
-tidally_locked = True
-use_heating = False; heating_magnitude=5*Kelvin/(day); heating_waveno=1; heating_shape='cos'
-timestep = 4e2*second / (Omega/Omega_E)
+
+linear=False
+timestep = 3e2*second / (Omega/Omega_E)
 stop_sim_time = 2*day / (Omega/Omega_E)
+
+
+lat_forcing = lambda lat: np.cos(lat); lattyp=''
+lontyp = sys.argv[1]
+if lontyp=='locked':
+    lon_forcing = lambda lon: np.cos(lon)*(np.cos(lon)>=0.)
+elif lontyp=='axi':
+    lon_forcing = lambda lon: 1/np.pi*lon**0
+elif lontyp=='semilocked':
+    lon_forcing = lambda lon: 1/np.pi*lon**0 + 0.5 * np.cos(lon)
+elif lontyp=='semilocked2':
+    lon_forcing = lambda lon: 1/np.pi*lon**0 + 0.5 * np.cos(lon) + 2/(3*np.pi) * np.cos(2*lon)
+elif lontyp=='halfcoslon':
+    lon_forcing = lambda lon: 0.5*np.cos(lon)
+elif lontyp=='coslon':
+    lon_forcing = lambda lon: 0.5*np.cos(lon)
+else:
+    raise ValueError("wrong input argument")
+
+if linear:
+    ext='_linear'
+else:
+    ext=''
+ext+=''
+
+snapshot_id = 'snapshots_2levelnew_%s_%s%s_%.1f_p02_%i_p05%s'%(resolution,lontyp,lattyp,Ro_T,tau_rad_nondim,ext)
+snapshot_id = snapshot_id.replace('.','p')
 #########################################
 #########################################
 
@@ -53,20 +84,25 @@ P2 = 0.75**(0.286)
 
 DeltaTheta = Ro_T*(2*Omega*R)**2/cp
 DeltaThetaVertical = mu*DeltaTheta
-Theta0 = 4*DeltaTheta #For non-tidally locked cases
 taurad = tau_rad_nondim/(2*Omega)
 taudrag = 1/(2*Omega*E)
-hyperdiff_degree = 4; nu = 40e15*meter**4/second * (R/R_E)**4 * (Omega/Omega_E)
+hyperdiff_degree = 4; nu = 10*40e15*meter**4/second * (R/R_E)**4 * (Omega/Omega_E)
 #hyperdiff_degree = 8; nu = 1e8*3e37*meter**8/second 
 
 # Bases
 coords = d3.S2Coordinates('phi', 'theta')
-dist = d3.Distributor(coords, dtype=dtype)#
+dist = d3.Distributor(coords, dtype=dtype)
 full_basis = d3.SphereBasis(coords, (Nphi, Ntheta), radius=R, dealias=dealias, dtype=dtype)
 #zonal_basis = d3.SphereBasis(coords, (1, Ntheta), radius=R, dealias=dealias, dtype=dtype)
 
 # cross product by zhat
 zcross = lambda A: d3.MulCosine(d3.skew(A))
+if hyperdiff_degree==4:
+    hyperdiff = lambda A : nu*d3.lap(d3.lap(A))
+elif hyperdiff_degree==8:
+    hyperdiff = lambda A : nu*d3.lap(d3.lap(d3.lap(d3.lap(A))))
+else:
+    raise ValueError('hyperdiff_degree')
 
 ###############################
 ###### SAVE CURRENT FILE ######
@@ -90,34 +126,25 @@ theta1 = dist.Field(name='theta1', bases=full_basis)
 theta2 = dist.Field(name='theta2', bases=full_basis)
 theta1E = dist.Field(name='theta1E', bases=full_basis)
 theta2E = dist.Field(name='theta2E', bases=full_basis)
-Qtropics = dist.Field(name='Qtropics', bases=full_basis)
-tau_Phi1 = dist.Field(name='tau_Phi1')
+tau = dist.Field(name='tau')
 
 ## Problem
-#problem = d3.IVP([u1,u2,omega,Phi1,Phi2,theta1,theta2,tau_Phi1], namespace=locals())
-#problem.add_equation("dt(u1) + nu*lap(lap(u1)) + grad(Phi1) + 2*Omega*zcross(u1) = - u1@grad(u1) - omega/2*(u2-u1)")
-#problem.add_equation("dt(u2) + nu*lap(lap(u2)) + grad(Phi2) + 2*Omega*zcross(u2) + u2/taudrag = - u2@grad(u2) - omega/2*(u2-u1)")
-#problem.add_equation("dt(theta1) + nu*lap(lap(theta1)) = - div(u1*theta1) - omega/2*(theta1+theta2) + (theta1E-theta1)/taurad")
-#problem.add_equation("dt(theta2) + nu*lap(lap(theta2)) = - div(u2*theta2) + omega/2*(theta1+theta2) + (theta2E-theta2)/taurad")
-#problem.add_equation("div(u1) + omega + tau_Phi1 = 0")
-#problem.add_equation("div(u2) - omega = 0")
-#problem.add_equation("(Phi2-Phi1)/(P2-P1) + cp*(theta1+theta2)/2 = 0")
-#problem.add_equation("ave(Phi1) = 0")
-
-problem = d3.IVP([u1,u2,Phi1,theta1,theta2,tau_Phi1], namespace=locals())
-if hyperdiff_degree==4:
-    diffs = ['nu*lap(lap(%s))'%var for var in ('u1','u2','theta1','theta2')]
-elif hyperdiff_degree==8:
-    diffs = ['nu*lap(lap(lap(lap(%s))))'%var for var in ('u1','u2','theta1','theta2')]
+problem = d3.IVP([u1,u2,Phi1,theta1,theta2,tau], namespace=locals())
+    
+if linear:
+    problem.add_equation("dt(u1) + hyperdiff(u1) + grad(Phi1) + 2*Omega*zcross(u1) + (u1-u2)/taudrag  = 0")
+    problem.add_equation("dt(u2) + hyperdiff(u2) + grad(Phi1- (P2-P1)*cp*(theta1+theta2)/2) + 2*Omega*zcross(u2) + u2/taudrag = 0")
+    problem.add_equation("dt(theta1) + hyperdiff(theta1) = (theta1E-theta1)/taurad")
+    problem.add_equation("dt(theta2) + hyperdiff(theta2) = (theta2E-theta2)/taurad")
+    problem.add_equation("div(u1+u2) + tau = 0")
+    problem.add_equation("ave(Phi1) = 0")
 else:
-    raise ValueError('hyperdiff_degree')
-problem.add_equation("dt(u1) + %s + grad(Phi1) + 2*Omega*zcross(u1) = - u1@grad(u1) - div(u2)/2*(u2-u1)"%diffs[0])
-problem.add_equation("dt(u2) + %s + grad(Phi1- (P2-P1)*cp*(theta1+theta2)/2) + 2*Omega*zcross(u2) + u2/taudrag = - u2@grad(u2) - div(u2)/2*(u2-u1)"%diffs[1])
-problem.add_equation("dt(theta1) + %s = - div(u1*theta1) - div(u2)/2*(theta2+theta1) + (theta1E-theta1)/taurad + Qtropics"%diffs[2])
-problem.add_equation("dt(theta2) + %s = - div(u2*theta2) + div(u2)/2*(theta2+theta1) + (theta2E-theta2)/taurad + Qtropics"%diffs[3])
-problem.add_equation("div(u1+u2) + tau_Phi1 = 0")
-problem.add_equation("ave(Phi1) = 0")
-
+    problem.add_equation("dt(u1) + hyperdiff(u1) + grad(Phi1) + 2*Omega*zcross(u1) = - u1@grad(u1) - div(u2)/2*(u2-u1)")
+    problem.add_equation("dt(u2) + hyperdiff(u2) + grad(Phi1- (P2-P1)*cp*(theta1+theta2)/2) + 2*Omega*zcross(u2) + u2/taudrag = - u2@grad(u2) - div(u2)/2*(u2-u1)")
+    problem.add_equation("dt(theta1) + hyperdiff(theta1) = - div(u1*theta1) - div(u2)/2*(theta2+theta1) + (theta1E-theta1)/taurad")
+    problem.add_equation("dt(theta2) + hyperdiff(theta2) = - div(u2*theta2) + div(u2)/2*(theta2+theta1) + (theta2E-theta2)/taurad")
+    problem.add_equation("div(u1+u2) + tau = 0")
+    problem.add_equation("ave(Phi1) = 0")
 
 # Solver
 solver = problem.build_solver(d3.RK222)
@@ -133,27 +160,21 @@ CFL.add_velocity(u1)
 phi, theta = dist.local_grids(full_basis)
 lat = np.pi / 2 - theta + 0*phi
 lon = phi-np.pi
-if tidally_locked:
-    theta1E['g'] = DeltaThetaVertical+DeltaTheta*np.cos(lat)*np.cos(lon)*(np.cos(lon)>=0) #np.exp(-(lat/(55*np.pi/180))**2)
-    theta2E['g'] = DeltaTheta*np.cos(lat)*np.cos(lon)*(np.cos(lon)>=0) #np.exp(-(lat/(55*np.pi/180))**2)
-else:
-    theta1E['g'] = (DeltaThetaVertical+Theta0+(DeltaTheta/2)*np.cos(2*lat))*Kelvin
-    theta2E['g'] = (Theta0+(DeltaTheta/2)*np.cos(2*lat))*Kelvin    
-    
-if use_heating:
-    if heating_shape=='gaussian':
-        Qtropics['g'] = heating_magnitude * np.exp(-(lat/(15*np.pi/180))**2) * np.sin(heating_waveno*phi)
-    elif heating_shape=='cos':
-        Qtropics['g'] = heating_magnitude * (1+np.cos(2*lat))/2 * np.sin(heating_waveno*phi)
+
+theta1E['g'] = DeltaTheta*lat_forcing(lat)*lon_forcing(lon) + DeltaThetaVertical*lat_forcing(lat)*np.minimum(lon_forcing(lon),0.1)
+theta2E['g'] = DeltaTheta*lat_forcing(lat)*lon_forcing(lon)
+
+sample_lat = np.linspace(-np.pi/2,np.pi/2,201)[:,None]
+sample_lon = np.linspace(-np.pi,np.pi,401)[None,:]
+meantheta1E = np.mean( np.cos(sample_lat) * (DeltaTheta*lat_forcing(sample_lat)*lon_forcing(sample_lon) + DeltaThetaVertical*lat_forcing(sample_lat)) ) * np.pi/2
+meantheta2E = np.mean( np.cos(sample_lat) * (DeltaTheta*lat_forcing(sample_lat)*lon_forcing(sample_lon)) ) * np.pi/2
 
 if not restart:
     theta1.fill_random('g', seed=1, distribution='normal', scale=DeltaTheta*1e-4)
     theta2.fill_random('g', seed=2, distribution='normal', scale=DeltaTheta*1e-4)
-    theta1['g'] += DeltaThetaVertical + DeltaTheta/4
-    theta2['g'] += DeltaTheta/4
-    #theta1['g'] += theta1E['g']
-    #theta2['g'] += theta2E['g']
-    #Phi2['g'] = - (P2-P1) * cp * (theta1['g']+theta2['g'])/2
+    theta1['g'] += meantheta1E
+    theta2['g'] += meantheta2E
+    Phi2['g'] = - (P2-P1) * cp * (theta1['g']+theta2['g'])/2
     ###u2 = d3.skew(d3.grad(Phi2)).evaluate()
     ###u2.change_scales(1)
     ###u2['g']/=(2*Omega*np.sin(lat))
@@ -171,7 +192,7 @@ ephi = dist.VectorField(coords, bases=full_basis)
 ephi['g'][0] = 1
 etheta = dist.VectorField(coords, bases=full_basis)
 etheta['g'][1] = 1
-snapshots = solver.evaluator.add_file_handler(SNAPSHOTS_DIR+snapshot_id, sim_dt=6*hour,mode=file_handler_mode)
+snapshots = solver.evaluator.add_file_handler(SNAPSHOTS_DIR+snapshot_id, sim_dt=6*hour / (Omega/Omega_E),mode=file_handler_mode)
 snapshots.add_tasks(solver.state)
 snapshots.add_task(Phi1- (P2-P1)*cp*(theta1+theta2)/2, name='Phi2')
 snapshots.add_task(d3.div(u2), name='omega')
@@ -179,12 +200,8 @@ snapshots.add_task(-d3.div(d3.skew(u1)), name='vorticity_1')
 snapshots.add_task(-d3.div(d3.skew(u2)), name='vorticity_2')
 snapshots.add_task(theta1E, name='theta1E')
 snapshots.add_task(theta2E, name='theta2E')
-#snapshots.add_task(Qtropics, name='Qtropics')
 
 
-#nu_ = dist.Field(name='nu_')
-#nu_['g'] = nu
-#snapshots.add_task(nu_, name='nu')
 
 # Main loop
 with warnings.catch_warnings():

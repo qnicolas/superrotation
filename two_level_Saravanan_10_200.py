@@ -9,8 +9,8 @@ SNAPSHOTS_DIR = "/pscratch/sd/q/qnicolas/dedalus_snapshots/"
 import warnings
 
 # Parameters
-Nphi = 128; Ntheta = 64
-#Nphi = 64; Ntheta = 32
+Nphi = 128; Ntheta = 64; resolution='T42'
+#Nphi = 64; Ntheta = 32; resolution='T21'
 dealias = (3/2, 3/2)
 dtype = np.float64
 
@@ -36,12 +36,12 @@ mu = 0.05
 #########################################
 #########################################
 ###############  SET    #################
-snapshot_id = 'snapshots_2level_T42_locked_%i_p02_%i_p05_8damp'%(Ro_T,tau_rad_nondim)
+snapshot_id = 'snapshots_2level_%s_locked_%i_p02_%i_p05'%(resolution,Ro_T,tau_rad_nondim)
 restart=False; restart_id='s1'
 use_CFL=False; safety_CFL = 0.8
 tidally_locked = True
 use_heating = False; heating_magnitude=5*Kelvin/(day); heating_waveno=1; heating_shape='cos'
-timestep = 1.5e2*second / (Omega/Omega_E)
+timestep = 4e2*second / (Omega/Omega_E)
 stop_sim_time = 10*day / (Omega/Omega_E)
 #########################################
 #########################################
@@ -56,8 +56,8 @@ DeltaThetaVertical = mu*DeltaTheta
 Theta0 = 4*DeltaTheta #For non-tidally locked cases
 taurad = tau_rad_nondim/(2*Omega)
 taudrag = 1/(2*Omega*E)
-#hyperdiff_degree = 4; nu = 40e15*meter**4/second * (R/R_E)**4 * (Omega/Omega_E)
-hyperdiff_degree = 8; nu = 3e37*meter**8/second 
+hyperdiff_degree = 4; nu = 40e15*meter**4/second * (R/R_E)**4 * (Omega/Omega_E)
+#hyperdiff_degree = 8; nu = 3e37*meter**8/second 
 
 # Bases
 coords = d3.S2Coordinates('phi', 'theta')
@@ -148,9 +148,9 @@ if use_heating:
         Qtropics['g'] = heating_magnitude * (1+np.cos(2*lat))/2 * np.sin(heating_waveno*phi)
 
 if not restart:
-    theta1.fill_random('g', seed=1, distribution='normal', scale=40*1e-4*Kelvin)
-    theta2.fill_random('g', seed=2, distribution='normal', scale=40*1e-4*Kelvin)
-    theta1['g'] += 1.1*DeltaTheta/4
+    theta1.fill_random('g', seed=1, distribution='normal', scale=DeltaTheta*1e-4)
+    theta2.fill_random('g', seed=2, distribution='normal', scale=DeltaTheta*1e-4)
+    theta1['g'] += DeltaThetaVertical + DeltaTheta/4
     theta2['g'] += DeltaTheta/4
     #theta1['g'] += theta1E['g']
     #theta2['g'] += theta2E['g']
